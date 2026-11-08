@@ -110,8 +110,11 @@ def _check_version(card: dict[str, Any], cat: Catalogue, ctx: Ctx) -> None:
         ctx.issue("/v", "wrong_type", "v must be a whole number")
     elif v not in cat.versions:
         known = ", ".join(str(x) for x in cat.versions)
+        shown = str(v) if abs(v) < 10**15 else "that"
         ctx.issue(
-            "/v", "unsupported_version", f"version {v} is not supported; known versions: {known}"
+            "/v",
+            "unsupported_version",
+            f"version {shown} is not supported; known versions: {known}",
         )
 
 
@@ -146,7 +149,7 @@ def _check_element(
     types: dict[str, Element],
 ) -> None:
     path = pointer("elements", key)
-    if not _KEY.fullmatch(key):
+    if not isinstance(key, str) or not _KEY.fullmatch(key):
         ctx.issue(
             path,
             "bad_key",

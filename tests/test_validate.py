@@ -626,3 +626,12 @@ def test_default_limits_match_the_format():
     assert (d.buttons, d.button_label, d.url, d.image_url, d.alt) == (5, 40, 2000, 1000, 200)
     assert d.max_nesting == 3
     assert d.max_per_type == {"Table": 1}
+
+
+def test_validate_does_not_raise_on_a_dict_that_json_could_not_hold():
+    # validate takes any Python value, not only parsed cards; it must report, never raise.
+    body = {"type": "Card", "props": {"title": "t"}, "children": []}
+    codes = [i.code for i in validate({"v": 1, "root": "card", "elements": {1: body}})]
+    assert "bad_key" in codes
+    codes = [i.code for i in validate({"v": 10**5000, "root": "card", "elements": {"card": body}})]
+    assert "unsupported_version" in codes
