@@ -62,6 +62,14 @@ text_for_the_model = catalogue_prompt()  # generated from the same data that val
 `validate(card, mode="open")` is for a card still being built: a child may name an element that
 has not arrived yet. The default `mode="final"` is for a finished card.
 
+## Rule for renderers: card text is plain text
+
+`validate` accepts `&`, `<` and `>` in text, because they are ordinary characters. Some surfaces
+give them meaning (in Slack, `<https://x|y>` is a hidden link and `<@U123>` or `<!here>` is a
+mention). So **every renderer must escape `&`, `<` and `>` in every text value** (use
+`cardspec.escape_mrkdwn` for Slack) so that card text can never form a link or a mention. Links
+come only from link elements that `LinkPolicy` has checked, never from text.
+
 ## Your own catalogue
 
 A catalogue is data, so you can extend the standard one:

@@ -8,6 +8,7 @@ from __future__ import annotations
 from importlib.metadata import PackageNotFoundError, version
 
 from .catalogue import Catalogue, Element, Profile
+from .escape import escape_mrkdwn
 from .issue import CardError, Issue
 from .limits import Limits
 from .links import LinkPolicy
@@ -32,6 +33,7 @@ __all__ = [
     "Profile",
     "__version__",
     "catalogue_prompt",
+    "escape_mrkdwn",
     "parse",
     "validate",
 ]
