@@ -1,0 +1,13 @@
+#!/usr/bin/env python3
+"""Refuse a commit message carrying tool attribution (see scripts/check_commit_messages.py).
+Enable once per clone: git config core.hooksPath scripts/hooks"""
+import sys
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
+from check_commit_messages import problems  # noqa: E402
+
+found = problems(Path(sys.argv[1]).read_text(encoding="utf-8", errors="replace"))
+for line in found:
+    print(f"commit-msg: this repository's commit messages carry no '{line}' lines", file=sys.stderr)
+sys.exit(1 if found else 0)

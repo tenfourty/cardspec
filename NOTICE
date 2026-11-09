@@ -1,0 +1,26 @@
+cardspec
+Copyright 2026 Jeremy Brown
+
+Licensed under the Apache License, Version 2.0 (see LICENSE).
+
+This product is derived from json-render
+(https://github.com/vercel-labs/json-render), which is licensed under the
+Apache License, Version 2.0 and carries the notice:
+
+    Copyright 2025 Vercel Inc.
+
+json-render has no NOTICE file of its own, so there is nothing further to
+reproduce from it.
+
+Changes (Apache License 2.0, section 4(b)): cardspec takes json-render's design
+and does not copy its code. It keeps the idea of a catalogue (elements with typed
+props, allowed children, a description and an example), the flat "spec" form (a root
+key plus a map of elements), validation that returns a list of path-addressed issues,
+generation of model instructions from the catalogue, and the shape of its charts. It
+is rewritten in Python with the standard library only. It leaves out state,
+expressions, actions, repeats and visibility rules, and it adds a strict schema kit
+in which every string has a named role, link and picture rules, character and size
+limits that refuse instead of truncating, and a nested "writing" form that is turned
+into the flat form on parse.
+
+The files catalogue.py, validate.py and prompt.py carry a comment that points here.
