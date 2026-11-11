@@ -185,3 +185,6 @@ Releases are made on the canonical forge, not on GitHub, and published by tag.
 2. After it merges, tag `vX.Y.Z` on `main` on the forge.
 3. The forge's mirror carries the tag to GitHub. The workflow run for that tag checks that the
    tag matches `project.version`, runs the checks, and publishes to PyPI by trusted publishing.
+
+A bad release is never moved or deleted: fix it in a new patch release, because PyPI does not allow
+re-uploading a version.
