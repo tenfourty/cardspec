@@ -115,3 +115,25 @@ def test_picture_host_list_does_not_open_buttons_and_vice_versa():
 def test_unknown_kind_is_an_error():
     with pytest.raises(ValueError):
         LinkPolicy().check("https://example.com", "video")
+
+
+@pytest.mark.parametrize(
+    "url",
+    [
+        "https://img.example.com:6379/x.png",
+        "https://img.example.com:443/x.png",
+        "https://img.example.com:/x.png",
+    ],
+)
+def test_a_picture_address_with_any_explicit_port_is_refused(url):
+    policy = LinkPolicy(image_hosts=["img.example.com"])
+    assert policy.check(url, "image") is not None
+    assert policy.check(url, "image")[0] == "port_not_allowed"
+    assert policy.check("https://img.example.com/x.png", "image") is None
+
+
+def test_a_listed_link_host_on_another_port_is_refused_but_any_host_policy_is_unchanged():
+    listed = LinkPolicy(allowed_hosts=["dash.example.com"])
+    assert listed.check("https://dash.example.com:6379/", "link")[0] == "port_not_allowed"
+    assert listed.check("https://dash.example.com/", "link") is None
+    assert LinkPolicy().check("https://example.com:8443/a", "link") is None

@@ -83,6 +83,13 @@ class LinkPolicy:
         if isinstance(host_or_error, tuple):
             return host_or_error
         host = host_or_error
+        # A host list names hosts, not ports: an address with a port is never let through
+        # because its host is listed (a port can reach some other service on that host).
+        if (kind == "image" or self.allowed_hosts is not None) and ":" in urlsplit(str(url)).netloc:
+            return (
+                "port_not_allowed",
+                f"the {what} must not give a port; remove the ':' and the number",
+            )
         if kind == "image":
             if not self.pictures_allowed:
                 return (
