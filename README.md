@@ -87,22 +87,44 @@ else:
 either form (or its JSON text), checks it with `validate`, and returns a `SlackResult` with
 `blocks`, `text` and `issues`. With any issue there are no blocks.
 
-* Card, Section, Text, Fields, Table, Divider, Image and link Buttons are rendered. Buttons are
+* Card, Section, Text, Fields, Table, Chart, Divider, Image and link Buttons are rendered. Buttons are
   links only: no action id, so a click is never sent back to your app. Slack has no nesting, so
   a Section becomes a heading followed by its children.
-* **Chart is not rendered yet.** A card with a Chart is refused with `chart_not_rendered`; it is
-  never quietly turned into a table.
+* Chart becomes Slack's `data_visualization` block (bar, line, area, pie). A chart over Slack's
+  limits is refused; it is never turned into a table. The card's Chart cannot say axis titles,
+  colours or a second axis, because Slack's block takes them but the card has no way to write
+  them. Series names and categories must each be different from one another.
 * Every string is escaped (`&`, `<`, `>`), so text cannot form a link or a mention. In `Text`,
   `**bold**`, `_italic_` and `` `code` `` become Slack marks; everywhere else, and for any other
   mark character, a zero-width space after `*`, `_`, `~` and backticks stops Slack reading
-  them as marks. Slack may still turn a bare web address or `:name:` in text into a link or an
-  emoji.
+  them as marks.
 * Slack's own limits are enforced on top of `Limits`, after escaping, by refusing the card:
-  50 blocks per message; 3000 characters in a section, 2000 in a context line or a field;
-  10 fields in a Fields; 1 table of at most 100 rows (header included) and 20 columns;
-  25 buttons of 75 characters with addresses up to 3000; alt text up to 2000.
+  50 blocks per message; 3000 characters in a section or a context line, 2000 in a field;
+  10 fields in a Fields; tables of at most 100 rows (header included) and 20 columns, and
+  10,000 characters across all cells of all tables in the message; at most 2 charts, with a
+  title up to 50 characters, labels and names up to 20, up to 12 series or segments and up to 20
+  categories; 25 buttons of 75 characters with addresses up to 3000; alt text up to 2000.
+  How many tables a card may hold is left to `Limits.max_per_type` (one by default).
 * Pictures only from hosts in `LinkPolicy(image_hosts=...)`. A host rule that raises is an
   issue (`link_policy_error`), not an exception.
+
+Known limits, to confirm by hand in a test channel:
+
+* Escaping is applied to every string, including button labels, alt text and table cells. Slack
+  says `&`, `<` and `>` must be escaped in text objects, but does not say whether it turns
+  `&amp;` back into `&` in `plain_text`, `alt_text` and `raw_text`. We escape everywhere, the
+  safe side; a cell with `&` may show as `&amp;` until that is checked.
+* Slack may turn a bare web address or `:name:` in text into a link or an emoji.
+
+The limits come from Slack's Block Kit reference:
+[table](https://docs.slack.dev/reference/block-kit/blocks/table-block),
+[data visualization](https://docs.slack.dev/reference/block-kit/blocks/data-visualization-block),
+[section](https://docs.slack.dev/reference/block-kit/blocks/section-block),
+[context](https://docs.slack.dev/reference/block-kit/blocks/context-block),
+[actions](https://docs.slack.dev/reference/block-kit/blocks/actions-block),
+[image](https://docs.slack.dev/reference/block-kit/blocks/image-block),
+[button](https://docs.slack.dev/reference/block-kit/block-elements/button-element) and
+[text objects](https://docs.slack.dev/reference/block-kit/composition-objects/text-object).
 
 ## Your own catalogue
 
