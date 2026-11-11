@@ -46,10 +46,13 @@ def all_strings(value: Any) -> list[str]:
 def test_card_title_and_subtitle():
     r = render_slack(card_of(title="Deploy", subtitle="Done at 14:02"))
     assert r.ok
-    assert r.blocks[0] == {"type": "section", "text": {"type": "mrkdwn", "text": "*Deploy*"}}
+    assert r.blocks[0] == {
+        "type": "section",
+        "text": {"type": "mrkdwn", "text": "*Deploy*", "verbatim": True},
+    }
     assert r.blocks[1] == {
         "type": "context",
-        "elements": [{"type": "mrkdwn", "text": "Done at 14:02"}],
+        "elements": [{"type": "mrkdwn", "text": "Done at 14:02", "verbatim": True}],
     }
     assert r.text == "Deploy"
 
@@ -64,7 +67,7 @@ def test_text_plain_bold_italic_code():
     (b,) = body(render({"type": "Text", "content": "a **bold** _it_ and `co_de` end"}))
     assert b == {
         "type": "section",
-        "text": {"type": "mrkdwn", "text": "a *bold* _it_ and `co_de` end"},
+        "text": {"type": "mrkdwn", "text": "a *bold* _it_ and `co_de` end", "verbatim": True},
     }
 
 
@@ -72,7 +75,10 @@ def test_text_style_bold_and_muted():
     (b,) = body(render({"type": "Text", "content": "Loud\nsecond", "style": "bold"}))
     assert b["text"]["text"] == "*Loud*\n*second*"
     (m,) = body(render({"type": "Text", "content": "quiet", "style": "muted"}))
-    assert m == {"type": "context", "elements": [{"type": "mrkdwn", "text": "quiet"}]}
+    assert m == {
+        "type": "context",
+        "elements": [{"type": "mrkdwn", "text": "quiet", "verbatim": True}],
+    }
 
 
 def test_section_title_then_children_flattened():
@@ -107,8 +113,8 @@ def test_fields():
     assert b == {
         "type": "section",
         "fields": [
-            {"type": "mrkdwn", "text": "*Errors*\n0"},
-            {"type": "mrkdwn", "text": "*Note*"},
+            {"type": "mrkdwn", "text": "*Errors*\n0", "verbatim": True},
+            {"type": "mrkdwn", "text": "*Note*", "verbatim": True},
         ],
     }
 
@@ -315,6 +321,47 @@ def test_the_worked_example_renders(nested):
         "actions",
     ]
     json.dumps(r.blocks)
+
+
+def text_objects(value: Any) -> list[dict[str, Any]]:
+    """Every dict that is a Slack text object (it has a `type` of mrkdwn or plain_text)."""
+    found: list[dict[str, Any]] = []
+    if isinstance(value, dict):
+        if value.get("type") in ("mrkdwn", "plain_text"):
+            found.append(value)
+        for v in value.values():
+            found += text_objects(v)
+    elif isinstance(value, list):
+        for v in value:
+            found += text_objects(v)
+    return found
+
+
+def test_every_mrkdwn_object_is_verbatim_and_plain_text_is_not(nested):
+    r = render_slack(nested)
+    assert r.ok
+    objs = text_objects(r.blocks)
+    kinds = {o["type"] for o in objs}
+    assert "mrkdwn" in kinds
+    for o in objs:
+        if o["type"] == "mrkdwn":
+            assert o["verbatim"] is True, o
+        else:
+            assert "verbatim" not in o, o
+
+
+def test_each_part_that_emits_mrkdwn_is_verbatim():
+    card = card_of(
+        {"type": "Text", "content": "see https://dash.example.com and #general"},
+        {"type": "Section", "title": "S", "children": [{"type": "Text", "content": "x"}]},
+        {"type": "Fields", "items": [{"label": "A", "value": "b"}]},
+        subtitle="sub",
+    )
+    r = render_slack(card)
+    assert r.ok
+    mrkdwn = [o for o in text_objects(r.blocks) if o["type"] == "mrkdwn"]
+    assert len(mrkdwn) >= 6
+    assert all(o["verbatim"] is True for o in mrkdwn)
 
 
 # ---- pictures --------------------------------------------------------------------------------
