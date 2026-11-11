@@ -66,8 +66,10 @@ has not arrived yet. The default `mode="final"` is for a finished card.
 
 `validate` accepts `&`, `<` and `>` in text, because they are ordinary characters. Some surfaces
 give them meaning (in Slack, `<https://x|y>` is a hidden link and `<@U123>` or `<!here>` is a
-mention). So **every renderer must escape `&`, `<` and `>` in every text value** (use
-`cardspec.escape_mrkdwn` for Slack) so that card text can never form a link or a mention. Links
+mention). So **every renderer must escape `&`, `<` and `>` in every text value that the surface reads
+as markup** (use `cardspec.escape_mrkdwn` for Slack's mrkdwn) so that card text can never form a
+link or a mention. Places that take plain text, such as Slack's `plain_text`, `raw_text` and
+`alt_text`, show text as typed and must not be escaped. Links
 come only from link elements that `LinkPolicy` has checked, never from text.
 
 ## Slack
@@ -87,17 +89,29 @@ else:
 either form (or its JSON text), checks it with `validate`, and returns a `SlackResult` with
 `blocks`, `text` and `issues`. With any issue there are no blocks.
 
-* Card, Section, Text, Fields, Table, Chart, Divider, Image and link Buttons are rendered. Buttons are
-  links only: no action id, so a click is never sent back to your app. Slack has no nesting, so
-  a Section becomes a heading followed by its children.
+* Card, Section, Text, Fields, Table, Chart, Divider, Image and link Buttons are rendered. Slack
+  has no nesting, so a Section becomes a heading followed by its children.
+* **Link buttons still send your app a click.** A Slack button with a `url` opens the address,
+  but Slack also sends an interaction payload to your app, and your app must acknowledge it
+  (reply with an empty 200) or the person sees an error. Each button carries a stable
+  `action_id`, `cardspec-link-<element key>-<button number>` (for example
+  `cardspec-link-actions-0`), so the app can recognise these clicks by the `cardspec-link-`
+  prefix and acknowledge them without doing anything else. There is no `value`.
 * Chart becomes Slack's `data_visualization` block (bar, line, area, pie). A chart over Slack's
-  limits is refused; it is never turned into a table. The card's Chart cannot say axis titles,
-  colours or a second axis, because Slack's block takes them but the card has no way to write
-  them. Series names and categories must each be different from one another.
-* Every string is escaped (`&`, `<`, `>`), so text cannot form a link or a mention. In `Text`,
-  `**bold**`, `_italic_` and `` `code` `` become Slack marks; everywhere else, and for any other
-  mark character, a zero-width space after `*`, `_`, `~` and backticks stops Slack reading
-  them as marks.
+  limits is refused; it is never turned into a table. Slack's block also takes `x_label` and
+  `y_label` (up to 50 characters each); the card format does not carry them yet, so they are
+  not sent. Slack has no colours, second axis, legend position, axis range or scale, gridlines
+  or number format. Series names and categories must each be different from one another.
+  Slack refuses labels, series names and categories over 20 characters while the card's
+  default cap (`Limits.chart_label`) is 24, so a card that is valid with the default limits can
+  still be refused for Slack; keep them to 20.
+* Text that Slack reads as mrkdwn (`Text`, subtitles, headings, fields, captions) and the
+  fallback `text` line have `&`, `<` and `>` escaped, so text cannot form a link or a mention,
+  and are measured after escaping. In `Text`, `**bold**`, `_italic_` and `` `code` `` become
+  Slack marks; elsewhere in mrkdwn, and for any other mark character, a zero-width space after
+  `*`, `_`, `~` and backticks stops Slack reading them as marks. Text in plain-text places
+  (chart titles, labels and series names, table cells, button labels, picture alt text) is not
+  markup: it is sent as written and measured as written.
 * Slack's own limits are enforced on top of `Limits`, after escaping, by refusing the card:
   50 blocks per message; 3000 characters in a section or a context line, 2000 in a field;
   10 fields in a Fields; tables of at most 100 rows (header included) and 20 columns, and
@@ -105,16 +119,18 @@ either form (or its JSON text), checks it with `validate`, and returns a `SlackR
   title up to 50 characters, labels and names up to 20, up to 12 series or segments and up to 20
   categories; 25 buttons of 75 characters with addresses up to 3000; alt text up to 2000.
   How many tables a card may hold is left to `Limits.max_per_type` (one by default).
-* Pictures only from hosts in `LinkPolicy(image_hosts=...)`. A host rule that raises is an
+* Pictures only from hosts in `LinkPolicy(image_hosts=...)`, with no port. A host rule that raises is an
   issue (`link_policy_error`), not an exception.
 
-Known limits, to confirm by hand in a test channel:
+Known limits:
 
-* Escaping is applied to every string, including button labels, alt text and table cells. Slack
-  says `&`, `<` and `>` must be escaped in text objects, but does not say whether it turns
-  `&amp;` back into `&` in `plain_text`, `alt_text` and `raw_text`. We escape everywhere, the
-  safe side; a cell with `&` may show as `&amp;` until that is checked.
-* Slack may turn a bare web address or `:name:` in text into a link or an emoji.
+* A hand test in a sandbox channel confirmed that `<`, `>` and `&` show as typed in plain-text
+  places (table cells, button labels, alt text, chart text), which is why those are not escaped.
+* **Your app must post with `parse: "none"`.** Escaping does not stop Slack turning a bare web
+  address in text into a link; only sending the message with `parse: "none"` does. `:name:` may
+  still become an emoji.
+* An address with an explicit port (even `:443`) is refused for pictures, and for buttons when a
+  host list is set, because a host list names hosts and not ports (`port_not_allowed`).
 
 The limits come from Slack's Block Kit reference:
 [table](https://docs.slack.dev/reference/block-kit/blocks/table-block),
