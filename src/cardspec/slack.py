@@ -30,6 +30,7 @@ Where each limit comes from (check them again here if Slack changes):
 
 from __future__ import annotations
 
+import hashlib
 import re
 from collections.abc import Callable
 from dataclasses import dataclass, field
@@ -52,6 +53,7 @@ MAX_FIELD_TEXT = 2000
 MAX_BUTTONS = 25
 MAX_BUTTON_TEXT = 75
 MAX_BUTTON_URL = 3000
+MAX_ACTION_ID = 255
 MAX_IMAGE_URL = 3000
 MAX_ALT_TEXT = 2000
 MAX_TABLE_ROWS = 100  # the header row counts
@@ -112,6 +114,19 @@ def _render_text(content: str, *, in_bold: bool) -> str:
             out.append(f"_{_safe(m.group('italic'))}_")
     out.append(_safe(content[pos:]))
     return "".join(out)
+
+
+def _action_id(key: str, number: int) -> str:
+    """A stable id for a link button: readable when short, a hash of the key when it is long.
+
+    Slack refuses a message whose action id is over 255 characters, so a long key is replaced by
+    a short hash of itself. The button number keeps ids in one card apart.
+    """
+    plain = f"cardspec-link-{key}-{number}"
+    if len(plain) <= MAX_ACTION_ID:
+        return plain
+    digest = hashlib.sha256(key.encode()).hexdigest()[:32]
+    return f"cardspec-link-h{digest}-{number}"
 
 
 def _bold_lines(text: str) -> str:
@@ -389,7 +404,7 @@ class _Run:
                     "type": "button",
                     "text": {"type": "plain_text", "text": label, "emoji": False},
                     "url": url,
-                    "action_id": f"cardspec-link-{path.split('/')[2]}-{i}",
+                    "action_id": _action_id(path.split("/")[2], i),
                 }
             )
         self.blocks.append({"type": "actions", "elements": elements})

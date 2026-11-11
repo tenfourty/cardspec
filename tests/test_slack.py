@@ -668,3 +668,20 @@ def test_mrkdwn_length_is_measured_after_escaping_but_plain_text_before():
 def test_control_characters_are_still_refused():
     r = render(chart(title="a\u202eb"))
     assert not r.ok and r.blocks == []
+
+
+def test_action_ids_stay_short_and_unique_for_a_very_long_element_key():
+    from cardspec.slack import _Run
+
+    props = {"buttons": [{"label": "b", "url": "https://a.example.com/x"}] * 2}
+    ids: list[str] = []
+    for key in ("k" * 400, "k" * 399 + "j", "k" * 400 + "~1"):
+        run = _Run({"elements": {}}, Limits())
+        run._actions(props, f"/elements/{key}/props")
+        ids += [e["action_id"] for e in run.blocks[0]["elements"]]
+    assert len(ids) == 6 and len(set(ids)) == 6
+    assert all(len(i) <= 255 and i.startswith("cardspec-link-") for i in ids)
+    # a short key keeps the readable form, and the id does not change between runs
+    run = _Run({"elements": {}}, Limits())
+    run._actions(props, "/elements/actions/props")
+    assert run.blocks[0]["elements"][1]["action_id"] == "cardspec-link-actions-1"

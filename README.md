@@ -95,7 +95,8 @@ either form (or its JSON text), checks it with `validate`, and returns a `SlackR
   but Slack also sends an interaction payload to your app, and your app must acknowledge it
   (reply with an empty 200) or the person sees an error. Each button carries a stable
   `action_id`, `cardspec-link-<element key>-<button number>` (for example
-  `cardspec-link-actions-0`), so the app can recognise these clicks by the `cardspec-link-`
+  `cardspec-link-actions-0`; a key so long that the id would pass Slack's 255-character limit
+  is replaced by a short hash of itself, `cardspec-link-h<hash>-<button number>`), so the app can recognise these clicks by the `cardspec-link-`
   prefix and acknowledge them without doing anything else. There is no `value`.
 * Chart becomes Slack's `data_visualization` block (bar, line, area, pie). A chart over Slack's
   limits is refused; it is never turned into a table. Slack's block also takes `x_label` and
