@@ -129,10 +129,9 @@ Known limits:
   escaped. How Slack displays `<`, `>` and `&` in them is still to be confirmed by a hand test
   in a sandbox channel.
 * `verbatim: true`, which the renderer sets on every `mrkdwn` text object, stops Slack parsing
-  channel names, user names and mentions in block text. It does **not** stop bare web addresses:
-  Slack still turns a regular address in a card's text into a clickable link. Put addresses in a
-  link button, not in text. Your app's `parse: "none"` applies only to the top-level fallback
-  `text` and does not reach block text. `:name:` may still become an emoji.
+  channel names, user names and mentions in block text. It does **not** stop a bare web address
+  in block text becoming a link. Your app should send the message with `parse: "none"`. A card's
+  writer should put addresses in a link button, not in text. `:name:` may still become an emoji.
 * An address with an explicit port (even `:443`) is refused for pictures, and for buttons when a
   host list is set, because a host list names hosts and not ports (`port_not_allowed`).
 
