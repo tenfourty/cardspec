@@ -67,7 +67,7 @@ def test_text_plain_bold_italic_code():
     (b,) = body(render({"type": "Text", "content": "a **bold** _it_ and `co_de` end"}))
     assert b == {
         "type": "section",
-        "text": {"type": "mrkdwn", "text": "a *bold* _it_ and `co_de` end"},
+        "text": {"type": "mrkdwn", "text": "a *bold* _it_ and `co_de` end", "verbatim": True},
     }
 
 
@@ -75,7 +75,10 @@ def test_text_style_bold_and_muted():
     (b,) = body(render({"type": "Text", "content": "Loud\nsecond", "style": "bold"}))
     assert b["text"]["text"] == "*Loud*\n*second*"
     (m,) = body(render({"type": "Text", "content": "quiet", "style": "muted"}))
-    assert m == {"type": "context", "elements": [{"type": "mrkdwn", "text": "quiet"}]}
+    assert m == {
+        "type": "context",
+        "elements": [{"type": "mrkdwn", "text": "quiet", "verbatim": True}],
+    }
 
 
 def test_section_title_then_children_flattened():
