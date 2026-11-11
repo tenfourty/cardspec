@@ -4,11 +4,14 @@
 anything short: a card that is invalid, or that would break one of Slack's own limits, comes
 back as a list of `Issue`s and no blocks at all, so whoever wrote the card can fix it.
 
-Every string from the card is escaped, wherever it goes (see `escape_mrkdwn`). Card text is
-plain text except in `Text` elements, where `**bold**`, `_italic_` and `` `code` `` are turned
-into Slack's own marks; any other mark character (`*`, `_`, `~`, a backtick) is made harmless
-by a zero-width space after it, because Slack has no backslash escape. Links come only from
-buttons that `LinkPolicy` has checked, and pictures only from hosts the caller listed.
+Text that Slack reads as mrkdwn is escaped (see `escape_mrkdwn`), and so is the fallback `text`
+line; its length is measured on the escaped string. Text in plain-text places (chart titles and
+labels, table cells, button labels, picture alt text) is not markup: it is sent as written and
+measured as written. Card text is plain text except in `Text` elements, where `**bold**`,
+`_italic_` and `` `code` `` are turned into Slack's own marks; any other mark character
+(`*`, `_`, `~`, a backtick) is made harmless by a zero-width space after it, because Slack has
+no backslash escape. Links come only from buttons that `LinkPolicy` has checked, and pictures
+only from hosts the caller listed.
 
 A Chart becomes Slack's `data_visualization` block. A chart that is over a limit is refused;
 it is never turned into a table.
@@ -265,7 +268,7 @@ class _Run:
             )
 
         def cell(value: object) -> dict[str, str]:
-            text = escape_mrkdwn(_plain(value))
+            text = _plain(value)
             self.table_chars += len(text)
             return {"type": "raw_text", "text": text}
 
@@ -289,13 +292,11 @@ class _Run:
                 MAX_CHARTS,
                 self.charts,
             )
-        title = self.fit(
-            escape_mrkdwn(props["title"]), MAX_CHART_TITLE, path + "/title", "chart title"
-        )
+        title = self.fit(props["title"], MAX_CHART_TITLE, path + "/title", "chart title")
         kind = props["kind"]
 
         def label(text: str, where: str, what: str) -> str:
-            return self.fit(escape_mrkdwn(text), MAX_CHART_LABEL, where, what)
+            return self.fit(text, MAX_CHART_LABEL, where, what)
 
         chart: dict[str, Any]
         if kind == "pie":
@@ -361,7 +362,7 @@ class _Run:
 
     def _image(self, props: dict[str, Any], path: str) -> None:
         url = self.fit(props["url"], MAX_IMAGE_URL, path + "/url", "picture address")
-        alt = self.fit(escape_mrkdwn(props["alt"]), MAX_ALT_TEXT, path + "/alt", "alt text")
+        alt = self.fit(props["alt"], MAX_ALT_TEXT, path + "/alt", "alt text")
         self.blocks.append({"type": "image", "image_url": url, "alt_text": alt})
 
     def _actions(self, props: dict[str, Any], path: str) -> None:
@@ -377,16 +378,18 @@ class _Run:
         elements = []
         for i, b in enumerate(buttons):
             here = f"{path}/buttons/{i}"
-            label = self.fit(
-                escape_mrkdwn(b["label"]), MAX_BUTTON_TEXT, here + "/label", "button label"
-            )
+            label = self.fit(b["label"], MAX_BUTTON_TEXT, here + "/label", "button label")
             url = self.fit(b["url"], MAX_BUTTON_URL, here + "/url", "button address")
-            # A link button only: no action id and no value, so a click is never sent back.
+            # A button with a url still makes Slack send an interaction payload to the app when
+            # it is clicked, and the app must acknowledge it or the person sees an error. The
+            # id is stable (card element key and button position) so the app can route that
+            # acknowledgement; there is no value and no other action.
             elements.append(
                 {
                     "type": "button",
                     "text": {"type": "plain_text", "text": label, "emoji": False},
                     "url": url,
+                    "action_id": f"cardspec-link-{path.split('/')[2]}-{i}",
                 }
             )
         self.blocks.append({"type": "actions", "elements": elements})

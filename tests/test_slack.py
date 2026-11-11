@@ -145,7 +145,7 @@ def test_divider():
     assert body(render({"type": "Divider"})) == [{"type": "divider"}]
 
 
-def test_actions_are_link_buttons_only():
+def test_actions_are_link_buttons_with_an_action_id_for_the_acknowledgement():
     (b,) = body(
         render(
             {
@@ -156,12 +156,30 @@ def test_actions_are_link_buttons_only():
     )
     assert b["type"] == "actions"
     (button,) = b["elements"]
+    action_id = button.pop("action_id")
     assert button == {
         "type": "button",
         "text": {"type": "plain_text", "text": "Open", "emoji": False},
         "url": "https://dash.example.com/web",
     }
-    assert "action_id" not in button and "value" not in button
+    assert action_id == "cardspec-link-actions-0"
+    assert "value" not in button
+
+
+def test_each_link_button_has_its_own_stable_action_id():
+    two = {
+        "type": "Actions",
+        "buttons": [
+            {"label": "a", "url": "https://a.example.com/x"},
+            {"label": "b", "url": "https://a.example.com/y"},
+        ],
+    }
+    ids = [e["action_id"] for e in body(render(two, two))[0]["elements"]]
+    again = [e["action_id"] for e in body(render(two, two))[0]["elements"]]
+    assert ids == again and len(set(ids)) == 2
+    other = [e["action_id"] for e in body(render(two, two))[1]["elements"]]
+    assert not set(ids) & set(other)
+    assert all(len(i) <= 255 for i in ids + other)
 
 
 def chart(kind: str = "bar", **kw: Any) -> dict[str, Any]:
@@ -212,21 +230,25 @@ def test_pie_chart():
     }
 
 
-def test_chart_text_is_escaped():
+def test_chart_text_is_not_escaped_and_is_measured_raw():
+    label = "R&D <> Q&A ops"  # 14 characters; entity-escaped it would be 26
+    assert len(label) == 14
     (b,) = body(
         render(
             chart(
                 "bar",
                 title="<!here> & *x*",
-                categories=["<@U1>"],
-                series=[{"name": "<!channel>", "values": [1]}],
+                categories=[label],
+                series=[{"name": label, "values": [1]}],
             )
         )
     )
-    for s in all_strings(b):
-        _no_live_markup(s)
-    assert b["chart"]["axis_config"]["categories"] == ["&lt;@U1&gt;"]
-    assert b["chart"]["series"][0]["data"][0]["label"] == "&lt;@U1&gt;"
+    assert b["title"] == "<!here> & *x*"
+    assert b["chart"]["axis_config"]["categories"] == [label]
+    assert b["chart"]["series"][0]["name"] == label
+    assert b["chart"]["series"][0]["data"][0]["label"] == label
+    (p,) = body(render(chart("pie", segments=[{"label": label, "value": 1}])))
+    assert p["chart"]["segments"][0]["label"] == label
 
 
 BIG = Limits(
@@ -342,23 +364,54 @@ def _no_live_markup(s: str) -> None:
 
 
 @pytest.mark.parametrize("nasty", NASTY)
-def test_every_string_is_escaped_everywhere(nasty):
+def mrkdwn_strings(value: Any) -> list[str]:
+    """Every string that Slack reads as mrkdwn."""
+    if isinstance(value, dict):
+        if value.get("type") == "mrkdwn":
+            return [value["text"]]
+        return [s for v in value.values() for s in mrkdwn_strings(v)]
+    if isinstance(value, list):
+        return [s for v in value for s in mrkdwn_strings(v)]
+    return []
+
+
+@pytest.mark.parametrize("nasty", NASTY)
+def test_every_mrkdwn_string_and_the_fallback_are_escaped(nasty):
     r = render_slack(
         card_of(
             {"type": "Section", "title": nasty, "children": [{"type": "Text", "content": nasty}]},
             {"type": "Text", "content": nasty, "style": "muted"},
             {"type": "Fields", "items": [{"label": nasty, "value": nasty}]},
             {"type": "Table", "headers": [nasty], "rows": [[nasty]], "caption": nasty},
-            {"type": "Actions", "buttons": [{"label": nasty, "url": "https://a.example.com/x"}]},
             title=nasty,
             subtitle=nasty,
         )
     )
     assert r.ok, r.issues
-    for s in all_strings(r.blocks) + [r.text]:
-        if s.startswith("https://"):
-            continue
+    found = mrkdwn_strings(r.blocks)
+    assert len(found) == 7
+    for s in [*found, r.text]:
         _no_live_markup(s)
+
+
+@pytest.mark.parametrize("nasty", NASTY)
+def test_plain_text_places_show_the_text_as_typed(nasty):
+    r = render_slack(
+        card_of(
+            {"type": "Table", "headers": [nasty], "rows": [[nasty]]},
+            {"type": "Actions", "buttons": [{"label": nasty, "url": "https://a.example.com/x"}]},
+            {"type": "Image", "url": "https://img.example.com/a.png", "alt": nasty},
+            chart("pie", title=nasty, segments=[{"label": nasty[:20], "value": 1}]),
+        ),
+        links=LinkPolicy(image_hosts=["img.example.com"]),
+        limits=Limits(cell=200, alt=200, button_label=40, title=150),
+    )
+    assert r.ok, r.issues
+    table, actions, image, viz = r.blocks[1:]
+    assert table["rows"] == [[{"type": "raw_text", "text": nasty}]] * 2
+    assert actions["elements"][0]["text"]["text"] == nasty
+    assert image["alt_text"] == nasty
+    assert viz["title"] == nasty and viz["chart"]["segments"][0]["label"] == nasty[:20]
 
 
 def test_a_mention_or_link_in_text_cannot_form():
@@ -485,12 +538,12 @@ def test_table_characters_are_counted_across_all_cells():
     assert r.issues[0].limit == 10000 and r.issues[0].actual == 10001
 
 
-def test_table_characters_count_after_escaping():
-    rows = [["&" * 100] for _ in range(99)]  # 5 characters each once escaped
+def test_table_characters_are_measured_on_the_raw_text():
+    rows = [["&" * 100] for _ in range(99)]  # 9900 raw; 49500 if entity-escaped
     r = render_slack(
         card_of({"type": "Table", "headers": ["h"], "rows": rows}), limits=TABLE_LIMITS
     )
-    assert codes(r) == ["slack_table_too_large"]
+    assert r.ok, r.issues
 
 
 def test_table_characters_are_counted_across_tables_in_one_message():
@@ -598,3 +651,20 @@ def test_the_card_is_not_changed():
     before = json.dumps(c, sort_keys=True)
     render_slack(c)
     assert json.dumps(c, sort_keys=True) == before
+
+
+def test_mrkdwn_length_is_measured_after_escaping_but_plain_text_before():
+    limits = Limits(text=5000, alt=3000, max_chars=9000, button_label=100)
+    r = render_slack(card_of({"type": "Text", "content": "&" * 700}), limits=limits)
+    assert codes(r) == ["slack_text_too_long"]  # 3500 once escaped
+    btn = {"type": "Actions", "buttons": [{"label": "&" * 75, "url": "https://a.example.com/x"}]}
+    assert render_slack(card_of(btn), limits=limits).ok
+    alt = {"type": "Image", "url": "https://img.example.com/a.png", "alt": "<" * 2000}
+    assert render_slack(
+        card_of(alt), limits=limits, links=LinkPolicy(image_hosts=["img.example.com"])
+    ).ok
+
+
+def test_control_characters_are_still_refused():
+    r = render(chart(title="a\u202eb"))
+    assert not r.ok and r.blocks == []
