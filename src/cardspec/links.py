@@ -60,9 +60,24 @@ class LinkPolicy:
         return _has_rule(self.image_hosts)
 
     def check(self, url: object, kind: str = "link") -> tuple[str, str] | None:
-        """Return None if `url` is acceptable, else `(code, message)`."""
+        """Return None if `url` is acceptable, else `(code, message)`.
+
+        A host rule that is a callable and raises does not escape from here: the address is
+        refused with the code `link_policy_error`, so a card with an address that cannot be
+        checked is never accepted and never crashes the caller.
+        """
         if kind not in ("link", "image"):
             raise ValueError(f"unknown address kind {kind!r}; use 'link' or 'image'")
+        try:
+            return self._check(url, kind)
+        except Exception as exc:
+            return (
+                "link_policy_error",
+                f"the web address could not be checked because the host rule failed "
+                f"({type(exc).__name__}); it is refused",
+            )
+
+    def _check(self, url: object, kind: str) -> tuple[str, str] | None:
         what = "picture address" if kind == "image" else "web address"
         host_or_error = self._host(url, what)
         if isinstance(host_or_error, tuple):
