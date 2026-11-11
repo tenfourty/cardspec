@@ -10,8 +10,19 @@ into Slack's own marks; any other mark character (`*`, `_`, `~`, a backtick) is 
 by a zero-width space after it, because Slack has no backslash escape. Links come only from
 buttons that `LinkPolicy` has checked, and pictures only from hosts the caller listed.
 
-Chart is not rendered yet: a card with a Chart is refused with `chart_not_rendered`, it is
-never turned into a table.
+A Chart becomes Slack's `data_visualization` block. A chart that is over a limit is refused;
+it is never turned into a table.
+
+Where each limit comes from (check them again here if Slack changes):
+
+* https://docs.slack.dev/reference/block-kit/blocks/table-block
+* https://docs.slack.dev/reference/block-kit/blocks/data-visualization-block
+* https://docs.slack.dev/reference/block-kit/blocks/section-block
+* https://docs.slack.dev/reference/block-kit/blocks/context-block
+* https://docs.slack.dev/reference/block-kit/blocks/actions-block
+* https://docs.slack.dev/reference/block-kit/blocks/image-block
+* https://docs.slack.dev/reference/block-kit/block-elements/button-element
+* https://docs.slack.dev/reference/block-kit/composition-objects/text-object
 """
 
 from __future__ import annotations
@@ -32,7 +43,7 @@ from .validate import validate
 # Slack's own limits, which hold whatever the card's `Limits` say.
 MAX_BLOCKS = 50
 MAX_SECTION_TEXT = 3000
-MAX_CONTEXT_TEXT = 2000
+MAX_CONTEXT_TEXT = 3000
 MAX_FIELDS = 10
 MAX_FIELD_TEXT = 2000
 MAX_BUTTONS = 25
@@ -42,7 +53,13 @@ MAX_IMAGE_URL = 3000
 MAX_ALT_TEXT = 2000
 MAX_TABLE_ROWS = 100  # the header row counts
 MAX_TABLE_COLS = 20
-MAX_TABLES = 1
+MAX_TABLE_CHARS = 10000  # across all cells of all tables in one message
+MAX_CHARTS = 2
+MAX_CHART_TITLE = 50
+MAX_CHART_LABEL = 20
+MAX_CHART_SERIES = 12
+MAX_CHART_SEGMENTS = 12
+MAX_CHART_POINTS = 20  # data points in one series, so categories too
 
 _ZWSP = "​"
 _MARKS = re.compile(r"([*_~`])")
@@ -113,7 +130,8 @@ class _Run:
         self.limits = limits
         self.issues: list[Issue] = []
         self.blocks: list[dict[str, Any]] = []
-        self.tables = 0
+        self.table_chars = 0
+        self.charts = 0
 
     # -- helpers -----------------------------------------------------------------------------
 
@@ -226,15 +244,6 @@ class _Run:
         self.blocks.append({"type": "section", "fields": fields})
 
     def _table(self, props: dict[str, Any], path: str) -> None:
-        self.tables += 1
-        if self.tables == MAX_TABLES + 1:
-            self.issue(
-                path,
-                "slack_too_many_tables",
-                f"Slack allows {MAX_TABLES} table in one message; keep one",
-                MAX_TABLES,
-                self.tables,
-            )
         headers = props["headers"]
         rows = props.get("rows", [])
         if len(rows) + 1 > MAX_TABLE_ROWS:
@@ -256,7 +265,9 @@ class _Run:
             )
 
         def cell(value: object) -> dict[str, str]:
-            return {"type": "raw_text", "text": escape_mrkdwn(_plain(value))}
+            text = escape_mrkdwn(_plain(value))
+            self.table_chars += len(text)
+            return {"type": "raw_text", "text": text}
 
         block: dict[str, Any] = {
             "type": "table",
@@ -269,11 +280,81 @@ class _Run:
             self.blocks.append(self.context(_safe(props["caption"]), path + "/caption", "caption"))
 
     def _chart(self, props: dict[str, Any], path: str) -> None:
-        self.issue(
-            path.rsplit("/props", 1)[0],
-            "chart_not_rendered",
-            "Charts cannot be shown in Slack yet; remove the Chart (it is not turned into a table)",
+        self.charts += 1
+        if self.charts == MAX_CHARTS + 1:
+            self.issue(
+                path,
+                "slack_too_many_charts",
+                f"Slack allows {MAX_CHARTS} charts in one message; remove the others",
+                MAX_CHARTS,
+                self.charts,
+            )
+        title = self.fit(
+            escape_mrkdwn(props["title"]), MAX_CHART_TITLE, path + "/title", "chart title"
         )
+        kind = props["kind"]
+
+        def label(text: str, where: str, what: str) -> str:
+            return self.fit(escape_mrkdwn(text), MAX_CHART_LABEL, where, what)
+
+        chart: dict[str, Any]
+        if kind == "pie":
+            segments = props["segments"]
+            self.too_big(path + "/segments", len(segments), MAX_CHART_SEGMENTS, "segments")
+            chart = {
+                "type": "pie",
+                "segments": [
+                    {
+                        "label": label(g["label"], f"{path}/segments/{i}/label", "segment label"),
+                        "value": g["value"],
+                    }
+                    for i, g in enumerate(segments)
+                ],
+            }
+        else:
+            categories = [
+                label(c, f"{path}/categories/{i}", "category")
+                for i, c in enumerate(props["categories"])
+            ]
+            series = props["series"]
+            self.too_big(path + "/categories", len(categories), MAX_CHART_POINTS, "categories")
+            self.too_big(path + "/series", len(series), MAX_CHART_SERIES, "series")
+            names = [
+                label(x["name"], f"{path}/series/{i}/name", "series name")
+                for i, x in enumerate(series)
+            ]
+            for what, items in (("categories", categories), ("series names", names)):
+                if len(set(items)) != len(items):
+                    self.issue(
+                        path,
+                        "slack_chart_names_not_unique",
+                        f"the {what} must all be different once escaped for Slack",
+                    )
+            chart = {
+                "type": kind,
+                "series": [
+                    {
+                        "name": name,
+                        "data": [
+                            {"label": c, "value": v}
+                            for c, v in zip(categories, x["values"], strict=True)
+                        ],
+                    }
+                    for name, x in zip(names, series, strict=True)
+                ],
+                "axis_config": {"categories": categories},
+            }
+        self.blocks.append({"type": "data_visualization", "title": title, "chart": chart})
+
+    def too_big(self, path: str, actual: int, limit: int, what: str) -> None:
+        if actual > limit:
+            self.issue(
+                path,
+                "slack_chart_too_large",
+                f"has {actual} {what}; Slack's limit for a chart is {limit}. Remove some",
+                limit,
+                actual,
+            )
 
     def _divider(self, props: dict[str, Any], path: str) -> None:
         self.blocks.append({"type": "divider"})
@@ -350,6 +431,15 @@ def render_slack(
             "Remove parts of the card",
             MAX_BLOCKS,
             len(run.blocks),
+        )
+    if run.table_chars > MAX_TABLE_CHARS:
+        run.issue(
+            "",
+            "slack_table_too_large",
+            f"the tables hold {run.table_chars} characters once escaped for Slack; Slack's limit "
+            f"is {MAX_TABLE_CHARS} across all tables in one message. Remove rows or shorten cells",
+            MAX_TABLE_CHARS,
+            run.table_chars,
         )
     if run.issues:
         return SlackResult(issues=run.issues)

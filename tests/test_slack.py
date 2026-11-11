@@ -164,25 +164,122 @@ def test_actions_are_link_buttons_only():
     assert "action_id" not in button and "value" not in button
 
 
-def test_chart_is_not_rendered_yet_and_never_becomes_a_table():
-    r = render(
-        {
-            "type": "Chart",
-            "title": "Errors",
-            "kind": "bar",
-            "categories": ["a"],
-            "series": [{"name": "n", "values": [1]}],
-        }
+def chart(kind: str = "bar", **kw: Any) -> dict[str, Any]:
+    base: dict[str, Any] = {"type": "Chart", "title": "Errors", "kind": kind}
+    if kind == "pie":
+        base["segments"] = [{"label": "a", "value": 2}, {"label": "b", "value": 1.5}]
+    else:
+        base["categories"] = ["12", "13"]
+        base["series"] = [
+            {"name": "errors", "values": [2, -1]},
+            {"name": "warnings", "values": [0, 3]},
+        ]
+    return {**base, **kw}
+
+
+@pytest.mark.parametrize("kind", ["bar", "line", "area"])
+def test_chart_with_series(kind):
+    (b,) = body(render(chart(kind)))
+    assert b == {
+        "type": "data_visualization",
+        "title": "Errors",
+        "chart": {
+            "type": kind,
+            "series": [
+                {
+                    "name": "errors",
+                    "data": [{"label": "12", "value": 2}, {"label": "13", "value": -1}],
+                },
+                {
+                    "name": "warnings",
+                    "data": [{"label": "12", "value": 0}, {"label": "13", "value": 3}],
+                },
+            ],
+            "axis_config": {"categories": ["12", "13"]},
+        },
+    }
+
+
+def test_pie_chart():
+    (b,) = body(render(chart("pie")))
+    assert b == {
+        "type": "data_visualization",
+        "title": "Errors",
+        "chart": {
+            "type": "pie",
+            "segments": [{"label": "a", "value": 2}, {"label": "b", "value": 1.5}],
+        },
+    }
+
+
+def test_chart_text_is_escaped():
+    (b,) = body(
+        render(
+            chart(
+                "bar",
+                title="<!here> & *x*",
+                categories=["<@U1>"],
+                series=[{"name": "<!channel>", "values": [1]}],
+            )
+        )
     )
-    assert not r.ok and r.blocks == []
-    assert codes(r) == ["chart_not_rendered"]
-    assert r.issues[0].path.startswith("/elements/")
+    for s in all_strings(b):
+        _no_live_markup(s)
+    assert b["chart"]["axis_config"]["categories"] == ["&lt;@U1&gt;"]
+    assert b["chart"]["series"][0]["data"][0]["label"] == "&lt;@U1&gt;"
 
 
-def test_the_worked_example_renders_except_its_chart(nested):
-    r = render_slack(nested)
-    assert codes(r) == ["chart_not_rendered"]
-    nested["children"] = [c for c in nested["children"] if c["type"] != "Chart"]
+BIG = Limits(
+    chart_label=100,
+    chart_categories=60,
+    chart_series=20,
+    title=500,
+    max_chars=9000,
+    max_elements=100,
+)
+
+
+def chart_issues(**kw: Any) -> list[str]:
+    return codes(render_slack(card_of(chart(**kw)), limits=BIG))
+
+
+def test_chart_limits_are_refused():
+    assert chart_issues(title="t" * 51) == ["slack_text_too_long"]
+    assert chart_issues(categories=["c" * 21, "d"]) == ["slack_text_too_long"]
+    assert chart_issues(series=[{"name": "n" * 21, "values": [1, 2]}]) == ["slack_text_too_long"]
+    cats = [str(i) for i in range(21)]
+    assert chart_issues(categories=cats, series=[{"name": "s", "values": [1] * 21}]) == [
+        "slack_chart_too_large"
+    ]
+    series = [{"name": f"s{i}", "values": [1, 2]} for i in range(13)]
+    assert chart_issues(series=series) == ["slack_chart_too_large"]
+    segs = [{"label": str(i), "value": 1} for i in range(13)]
+    assert chart_issues(kind="pie", segments=segs) == ["slack_chart_too_large"]
+
+
+def test_chart_at_the_limits_renders():
+    cats = [f"{i:020d}" for i in range(20)]
+    series = [{"name": f"{i:020d}", "values": [1] * 20} for i in range(12)]
+    r = render_slack(card_of(chart(categories=cats, series=series, title="t" * 50)), limits=BIG)
+    assert r.ok, r.issues
+    segs = [{"label": str(i), "value": 1} for i in range(12)]
+    r = render_slack(card_of(chart("pie", segments=segs)), limits=BIG)
+    assert r.ok, r.issues
+
+
+def test_chart_series_names_and_categories_must_be_unique():
+    dup = [{"name": "same", "values": [1, 2]}, {"name": "same", "values": [3, 4]}]
+    assert chart_issues(series=dup) == ["slack_chart_names_not_unique"]
+    assert chart_issues(categories=["a", "a"]) == ["slack_chart_names_not_unique"]
+
+
+def test_at_most_two_charts_per_message():
+    r = render_slack(card_of(chart(), chart(), chart()), limits=Limits(max_per_type={"Chart": 5}))
+    assert codes(r) == ["slack_too_many_charts"]
+    assert render_slack(card_of(chart(), chart()), limits=Limits(max_per_type={"Chart": 5})).ok
+
+
+def test_the_worked_example_renders(nested):
     r = render_slack(nested)
     assert r.ok
     assert [b["type"] for b in r.blocks] == [
@@ -191,6 +288,7 @@ def test_the_worked_example_renders_except_its_chart(nested):
         "section",
         "section",
         "table",
+        "data_visualization",
         "divider",
         "actions",
     ]
@@ -325,7 +423,7 @@ def test_escaping_that_makes_text_too_long_is_refused():
 
 def test_context_text_limit():
     r = render_slack(
-        card_of({"type": "Text", "content": "y" * 2500, "style": "muted"}),
+        card_of({"type": "Text", "content": "y" * 3001, "style": "muted"}),
         limits=Limits(text=5000, max_chars=9000),
     )
     assert codes(r) == ["slack_text_too_long"]
@@ -368,10 +466,44 @@ def test_table_row_and_column_limits():
     assert ok.ok
 
 
-def test_only_one_table_per_message():
-    t = {"type": "Table", "headers": ["h"], "rows": []}
-    r = render_slack(card_of(t, t), limits=Limits(max_per_type={"Table": 2}))
-    assert codes(r) == ["slack_too_many_tables"]
+TABLE_LIMITS = Limits(
+    table_rows=200, cell=1000, max_chars=100000, max_bytes=10**6, max_per_type={"Table": 3}
+)
+
+
+def test_table_characters_are_counted_across_all_cells():
+    rows = [["x" * 101] for _ in range(99)]  # 99 * 101 + the 1-character header = 10000
+    ok = render_slack(
+        card_of({"type": "Table", "headers": ["h"], "rows": rows}), limits=TABLE_LIMITS
+    )
+    assert ok.ok, ok.issues
+    rows[0] = ["x" * 102]
+    r = render_slack(
+        card_of({"type": "Table", "headers": ["h"], "rows": rows}), limits=TABLE_LIMITS
+    )
+    assert codes(r) == ["slack_table_too_large"]
+    assert r.issues[0].limit == 10000 and r.issues[0].actual == 10001
+
+
+def test_table_characters_count_after_escaping():
+    rows = [["&" * 100] for _ in range(99)]  # 5 characters each once escaped
+    r = render_slack(
+        card_of({"type": "Table", "headers": ["h"], "rows": rows}), limits=TABLE_LIMITS
+    )
+    assert codes(r) == ["slack_table_too_large"]
+
+
+def test_table_characters_are_counted_across_tables_in_one_message():
+    rows = [["x" * 100] for _ in range(60)]  # 6001 with the header, twice
+    t = {"type": "Table", "headers": ["h"], "rows": rows}
+    r = render_slack(card_of(t, t), limits=TABLE_LIMITS)
+    assert codes(r) == ["slack_table_too_large"]
+    assert r.issues[0].path == "" and r.issues[0].actual == 12002
+
+
+def test_several_tables_are_fine_when_the_card_limits_allow_them():
+    t = {"type": "Table", "headers": ["h"], "rows": [["x"]]}
+    assert render_slack(card_of(t, t), limits=TABLE_LIMITS).ok
 
 
 def test_too_many_buttons():
