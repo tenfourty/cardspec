@@ -11,9 +11,9 @@ generated from the catalogue are its ideas, rewritten in Python. The code is new
 [NOTICE](NOTICE) for what was kept and what changed. cardspec is licensed under the Apache
 License 2.0 ([LICENSE](LICENSE)).
 
-This release is slice 1: the schema kit, the catalogue, the `standard` catalogue, `parse`,
-`validate` and the model prompt. Walking and rewriting strings, patches, and the renderers
-(text, Slack, HTML) come in later releases.
+So far: the schema kit, the catalogue, the `standard` catalogue, `parse`, `validate`, the model
+prompt and the Slack renderer. Walking and rewriting strings, patches, and the other renderers
+(text, HTML) come in later releases.
 
 ## A card
 
@@ -69,6 +69,40 @@ give them meaning (in Slack, `<https://x|y>` is a hidden link and `<@U123>` or `
 mention). So **every renderer must escape `&`, `<` and `>` in every text value** (use
 `cardspec.escape_mrkdwn` for Slack) so that card text can never form a link or a mention. Links
 come only from link elements that `LinkPolicy` has checked, never from text.
+
+## Slack
+
+```python
+from cardspec import render_slack, LinkPolicy
+
+result = render_slack(card, links=LinkPolicy(image_hosts=["img.example.com"]))
+if result.ok:
+    post(blocks=result.blocks, text=result.text)  # text is the fallback for notifications
+else:
+    for issue in result.issues:
+        print(issue.to_dict())  # nothing was cut short; fix the card and render again
+```
+
+`render_slack(card, *, catalogue=None, limits=None, links=None, profile=None)` takes a card in
+either form (or its JSON text), checks it with `validate`, and returns a `SlackResult` with
+`blocks`, `text` and `issues`. With any issue there are no blocks.
+
+* Card, Section, Text, Fields, Table, Divider, Image and link Buttons are rendered. Buttons are
+  links only: no action id, so a click is never sent back to your app. Slack has no nesting, so
+  a Section becomes a heading followed by its children.
+* **Chart is not rendered yet.** A card with a Chart is refused with `chart_not_rendered`; it is
+  never quietly turned into a table.
+* Every string is escaped (`&`, `<`, `>`), so text cannot form a link or a mention. In `Text`,
+  `**bold**`, `_italic_` and `` `code` `` become Slack marks; everywhere else, and for any other
+  mark character, a zero-width space after `*`, `_`, `~` and backticks stops Slack reading
+  them as marks. Slack may still turn a bare web address or `:name:` in text into a link or an
+  emoji.
+* Slack's own limits are enforced on top of `Limits`, after escaping, by refusing the card:
+  50 blocks per message; 3000 characters in a section, 2000 in a context line or a field;
+  10 fields in a Fields; 1 table of at most 100 rows (header included) and 20 columns;
+  25 buttons of 75 characters with addresses up to 3000; alt text up to 2000.
+* Pictures only from hosts in `LinkPolicy(image_hosts=...)`. A host rule that raises is an
+  issue (`link_policy_error`), not an exception.
 
 ## Your own catalogue
 
