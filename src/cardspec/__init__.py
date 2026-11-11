@@ -14,6 +14,7 @@ from .limits import Limits
 from .links import LinkPolicy
 from .parse import parse
 from .prompt import catalogue_prompt
+from .slack import SlackResult, render_slack
 from .standard import CATALOGUE as STANDARD
 from .validate import validate
 
@@ -31,9 +32,11 @@ __all__ = [
     "Limits",
     "LinkPolicy",
     "Profile",
+    "SlackResult",
     "__version__",
     "catalogue_prompt",
     "escape_mrkdwn",
     "parse",
+    "render_slack",
     "validate",
 ]
