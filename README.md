@@ -124,8 +124,9 @@ either form (or its JSON text), checks it with `validate`, and returns a `SlackR
 
 Known limits:
 
-* A hand test in a sandbox channel confirmed that `<`, `>` and `&` show as typed in plain-text
-  places (table cells, button labels, alt text, chart text), which is why those are not escaped.
+* Plain-text places (table cells, button labels, alt text, chart text) are sent as written, not
+  escaped. How Slack displays `<`, `>` and `&` in them is still to be confirmed by a hand test
+  in a sandbox channel.
 * **Your app must post with `parse: "none"`.** Escaping does not stop Slack turning a bare web
   address in text into a link; only sending the message with `parse: "none"` does. `:name:` may
   still become an emoji.
