@@ -178,12 +178,12 @@ class _Run:
     def mrkdwn_section(self, text: str, limit: int, path: str, what: str) -> dict[str, Any]:
         return {
             "type": "section",
-            "text": {"type": "mrkdwn", "text": self.fit(text, limit, path, what)},
+            "text": {"type": "mrkdwn", "text": self.fit(text, limit, path, what), "verbatim": True},
         }
 
     def context(self, text: str, path: str, what: str) -> dict[str, Any]:
         text = self.fit(text, MAX_CONTEXT_TEXT, path, what)
-        return {"type": "context", "elements": [{"type": "mrkdwn", "text": text}]}
+        return {"type": "context", "elements": [{"type": "mrkdwn", "text": text, "verbatim": True}]}
 
     def heading(self, title: str, path: str) -> dict[str, Any]:
         return self.mrkdwn_section(f"*{_safe(title)}*", MAX_SECTION_TEXT, path, "title")
@@ -257,6 +257,7 @@ class _Run:
                 {
                     "type": "mrkdwn",
                     "text": self.fit(text, MAX_FIELD_TEXT, f"{path}/items/{i}", "field"),
+                    "verbatim": True,
                 }
             )
         self.blocks.append({"type": "section", "fields": fields})

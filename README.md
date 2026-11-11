@@ -128,9 +128,10 @@ Known limits:
 * Plain-text places (table cells, button labels, alt text, chart text) are sent as written, not
   escaped. How Slack displays `<`, `>` and `&` in them is still to be confirmed by a hand test
   in a sandbox channel.
-* **Your app must post with `parse: "none"`.** Escaping does not stop Slack turning a bare web
-  address in text into a link; only sending the message with `parse: "none"` does. `:name:` may
-  still become an emoji.
+* Block text is protected by `verbatim: true`, which the renderer sets on every `mrkdwn` text
+  object, so Slack does not turn bare web addresses, channel names or user names in card text
+  into links or mentions. The fallback `text` is top-level message text, not block text, so your
+  app must still send it with `parse: "none"` (or equivalent). `:name:` may still become an emoji.
 * An address with an explicit port (even `:443`) is refused for pictures, and for buttons when a
   host list is set, because a host list names hosts and not ports (`port_not_allowed`).
 
