@@ -174,5 +174,17 @@ uv run ruff check . && uv run ruff format --check . && uv run mypy
 git config core.hooksPath scripts/hooks     # refuses commit messages with tool attribution
 ```
 
-Changes go on a branch and a pull request. Releases are made by release-please from the
-commit messages (Conventional Commits) and published to PyPI by trusted publishing.
+Changes go on a branch and a pull request.
+
+## Releasing
+
+Releases are made on the canonical forge, not on GitHub, and published by tag.
+
+1. Open a pull request on the forge that sets `version` in `pyproject.toml` and adds the
+   release to `CHANGELOG.md`.
+2. After it merges, tag `vX.Y.Z` on `main` on the forge.
+3. The forge's mirror carries the tag to GitHub. The workflow run for that tag checks that the
+   tag matches `project.version`, runs the checks, and publishes to PyPI by trusted publishing.
+
+A bad release is never moved or deleted: fix it in a new patch release, because PyPI does not allow
+re-uploading a version.
