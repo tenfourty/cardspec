@@ -1,5 +1,9 @@
 # Changelog
 
+## 0.1.1 (2026-11-12)
+
+The first release published to PyPI. It is the same code as 0.1.0, whose tag never published: GitHub refused to start its workflow, because the allowed-actions list still named actions by tag rather than by the commits the workflow pins.
+
 ## 0.1.0 (2026-11-12)
 
 First release. A standard-library-only library (Python 3.11 or later) for cards described as data:
